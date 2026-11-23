@@ -6,6 +6,7 @@
 <meta name="color-scheme" content="light dark">
 <link rel="icon" href="data:,">
 <title>欲しい商品・最安値メモ</title>
+<!-- v5 2026-11-23: パスワード画面（ハッシュ式・手軽な式）追加 / 土台はリポジトリ版v4（写真JAN読み取り強化版） -->
 <!-- v4 2026-11-21: デザイン刷新（全幅・2列グリッド・見出し1行・タブと検索を1行・ボタン縦狭） / ロックボタン追加 -->
 <!-- v3 2026-11-21: 保存・削除を即時反映（楽観的更新）に変更 / ボタンを小型化 -->
 <!-- v2 2026-11-21: ZXing埋め込み / ライブカメラ廃止・写真読み取りのみ / Museに頼むボタン追加 / 単体HTML版 -->
@@ -173,6 +174,69 @@ details.gascode pre{white-space:pre-wrap;word-break:break-all;font-size:11px;bac
 </style>
 </head>
 <body>
+<style>
+#passGate{position:fixed;inset:0;z-index:99999;background:#111827;display:flex;align-items:center;justify-content:center;padding:20px;box-sizing:border-box}
+#passGate .box{background:#fff;color:#222;border-radius:14px;padding:24px 20px;max-width:360px;width:100%;box-sizing:border-box;font-family:sans-serif}
+#passGate h2{margin:0 0 6px;font-size:18px}
+#passGate p{margin:0 0 14px;font-size:13px;color:#555}
+#passGate input[type=password]{width:100%;font-size:17px;padding:11px;box-sizing:border-box;border:1px solid #bbb;border-radius:8px}
+#passGate label{display:flex;align-items:center;gap:8px;font-size:14px;margin:12px 0}
+#passGate button{width:100%;font-size:16px;padding:12px;border:0;border-radius:8px;background:#2563eb;color:#fff}
+#passGate .err{color:#c00;font-size:13px;min-height:18px;margin-top:8px}
+</style>
+<div id="passGate">
+  <div class="box">
+    <h2>欲しい商品・最安値メモ</h2>
+    <p>パスワードを入れてください</p>
+    <input type="password" id="gatePw" autocomplete="current-password">
+    <label><input type="checkbox" id="gateRemember" checked> この端末では次回から自動で開く</label>
+    <button type="button" id="gateBtn">開く</button>
+    <div class="err" id="gateErr"></div>
+  </div>
+</div>
+<script>
+"use strict";
+(function(){
+  var PASS_HASH = "pbkdf2$210000$+xCWpHOFP+tqc6znUuczxA==$R33zpXqqXgI4EUplrlFGNhvKsNWQotKt2eoygANdcF8=";
+  var KEY = "kaimono_gate_ok_v1";
+  function unb64(str){ var s=atob(str), b=new Uint8Array(s.length); for(var i=0;i<s.length;i++) b[i]=s.charCodeAt(i); return b; }
+  async function verify(password, stored){
+    try{
+      var parts=String(stored).split("$");
+      if(parts.length!==4||parts[0]!=="pbkdf2") return false;
+      var key=await crypto.subtle.importKey("raw", new TextEncoder().encode(password), "PBKDF2", false, ["deriveBits"]);
+      var bits=new Uint8Array(await crypto.subtle.deriveBits({name:"PBKDF2", hash:"SHA-256", salt:unb64(parts[2]), iterations:parseInt(parts[1],10)}, key, 256));
+      var expect=unb64(parts[3]);
+      if(bits.length!==expect.length) return false;
+      var diff=0; for(var i=0;i<bits.length;i++) diff|=bits[i]^expect[i];
+      return diff===0;
+    }catch(e){ return false; }
+  }
+  var gate=document.getElementById("passGate");
+  var remembered=false;
+  try{ remembered = localStorage.getItem(KEY)===PASS_HASH; }catch(e){}
+  if(remembered){ gate.remove(); return; }
+  document.body.style.overflow="hidden";
+  function openApp(){
+    try{
+      if(document.getElementById("gateRemember").checked) localStorage.setItem(KEY, PASS_HASH);
+      else localStorage.removeItem(KEY);
+    }catch(e){}
+    document.body.style.overflow="";
+    gate.remove();
+  }
+  async function tryOpen(){
+    var err=document.getElementById("gateErr");
+    err.textContent="";
+    var ok=await verify(document.getElementById("gatePw").value, PASS_HASH);
+    if(ok) openApp();
+    else err.textContent="パスワードが違います";
+  }
+  document.getElementById("gateBtn").addEventListener("click", tryOpen);
+  document.getElementById("gatePw").addEventListener("keydown", function(e){ if(e.key==="Enter") tryOpen(); });
+})();
+</script>
+
 <div class="wrap">
   <div class="topbar">
     <div class="ttl">欲しい商品・最安値メモ</div>
@@ -451,12 +515,12 @@ document.getElementById("reloadBtn").addEventListener("click", function(){ loadA
 /* 暗号化ページで「ずっと覚える」を使っている端末ではロックボタンを出す */
 (function(){
   var has=false;
-  try{ has=!!localStorage.getItem("kaimono_unlock_jwk_v1"); }catch(e){}
+  try{ has=!!localStorage.getItem("kaimono_unlock_jwk_v1")||!!localStorage.getItem("kaimono_gate_ok_v1"); }catch(e){}
   if(has){
     var lb=document.getElementById("lockBtn");
     lb.style.display="";
     lb.addEventListener("click", function(){
-      try{ localStorage.removeItem("kaimono_unlock_jwk_v1"); }catch(e){}
+      try{ localStorage.removeItem("kaimono_unlock_jwk_v1"); localStorage.removeItem("kaimono_gate_ok_v1"); }catch(e){}
       location.reload();
     });
   }
