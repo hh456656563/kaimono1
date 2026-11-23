@@ -7,7 +7,7 @@
 <link rel="icon" href="data:,">
 <title>欲しい商品・最安値メモ</title>
 <!-- v5 2026-11-23: パスワード画面（ハッシュ式・手軽な式）追加 / 土台はリポジトリ版v4（写真JAN読み取り強化版） -->
-<!-- v6 2026-11-23: 一括Claude依頼ボタン / 編集画面で価格の編集・削除（updatePrice追加） / 依頼文に商品画像URLの書き戻しを追加 -->
+<!-- v6 2026-11-23: 一括Muse依頼ボタン / 編集画面で価格の編集・削除（updatePrice追加） / 依頼文に商品画像URLの書き戻しを追加 -->
 <!-- v4 2026-11-21: デザイン刷新（全幅・2列グリッド・見出し1行・タブと検索を1行・ボタン縦狭） / ロックボタン追加 -->
 <!-- v3 2026-11-21: 保存・削除を即時反映（楽観的更新）に変更 / ボタンを小型化 -->
 <!-- v2 2026-11-21: ZXing埋め込み / ライブカメラ廃止・写真読み取りのみ / Museに頼むボタン追加 / 単体HTML版 -->
@@ -255,7 +255,7 @@ details.gascode pre{white-space:pre-wrap;word-break:break-all;font-size:11px;bac
     </div>
     <div class="toolbar" id="toolbarWant">
       <div class="search"><input type="search" id="searchInput" placeholder="商品名・JAN・店名で検索"></div>
-      <button class="btn sm" id="bulkAskBtn" type="button" style="white-space:nowrap">🤖 一括でClaudeに依頼</button>
+      <button class="btn sm" id="bulkAskBtn" type="button" style="white-space:nowrap">🤖 一括でMuseに依頼</button>
     </div>
   </div>
 
@@ -939,7 +939,7 @@ document.getElementById("bulkAskBtn").addEventListener("click", function(){
   targets.forEach(function(p){ markRequested(p.id); });
   copyText(text).then(function(){
     render();
-    toast(targets.length + "件分の依頼文をコピーしました。Claudeのチャットに貼って送ってください");
+    toast(targets.length + "件分の依頼文をコピーしました。Museのチャットに貼って送ってください");
   });
 });
 
