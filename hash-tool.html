@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>パスワードのハッシュ作成（欲しい物.html用）</title>
+<style>
+body{font-family:sans-serif;margin:24px;line-height:1.6;color:#222;background:#fff}
+h1{font-size:18px}
+label{display:block;margin-top:16px;font-weight:700}
+input{font-size:17px;padding:10px;width:100%;max-width:420px;box-sizing:border-box}
+button{font-size:16px;padding:12px 20px;margin-top:20px}
+textarea{width:100%;max-width:560px;height:90px;font-size:13px;box-sizing:border-box}
+.note{color:#555;font-size:14px;max-width:560px}
+.err{color:#c00;font-weight:700}
+</style>
+</head>
+<body>
+<h1>パスワードのハッシュ作成</h1>
+<p class="note">欲しい物.html のパスワード画面用です。パスワードはこの端末の中だけで処理され、どこにも送信されません。出てきた文字列（ハッシュ）だけを Muse のチャットに貼ってください。ハッシュからパスワードは分かりません。</p>
+<label>パスワード <input type="password" id="pw1" autocomplete="new-password"></label>
+<label>パスワード（もう一度） <input type="password" id="pw2" autocomplete="new-password"></label>
+<div><button type="button" id="make">ハッシュを作る</button></div>
+<p class="err" id="err"></p>
+<label>できたハッシュ（これを貼る） <textarea id="out" readonly></textarea></label>
+<div><button type="button" id="copy">ハッシュをコピー</button></div>
+<script>
+"use strict";
+window.KaimonoPassCore = (function(){
+  var ITER = 210000;
+  function b64(buf){
+    var bytes = new Uint8Array(buf), s = "";
+    for(var i=0;i<bytes.length;i++) s += String.fromCharCode(bytes[i]);
+    return btoa(s);
+  }
+  function unb64(str){
+    var s = atob(str), bytes = new Uint8Array(s.length);
+    for(var i=0;i<s.length;i++) bytes[i] = s.charCodeAt(i);
+    return bytes;
+  }
+  async function derive(password, saltBytes, iter){
+    var key = await crypto.subtle.importKey("raw", new TextEncoder().encode(password), "PBKDF2", false, ["deriveBits"]);
+    return await crypto.subtle.deriveBits({name:"PBKDF2", hash:"SHA-256", salt:saltBytes, iterations:iter}, key, 256);
+  }
+  async function makeHash(password){
+    var salt = crypto.getRandomValues(new Uint8Array(16));
+    var bits = await derive(password, salt, ITER);
+    return "pbkdf2$" + ITER + "$" + b64(salt.buffer) + "$" + b64(bits);
+  }
+  async function verify(password, stored){
+    try{
+      var parts = String(stored).split("$");
+      if(parts.length !== 4 || parts[0] !== "pbkdf2") return false;
+      var iter = parseInt(parts[1], 10);
+      var salt = unb64(parts[2]);
+      var expect = unb64(parts[3]);
+      var bits = new Uint8Array(await derive(password, salt, iter));
+      if(bits.length !== expect.length) return false;
+      var diff = 0;
+      for(var i=0;i<bits.length;i++) diff |= bits[i] ^ expect[i];
+      return diff === 0;
+    }catch(e){ return false; }
+  }
+  return {makeHash: makeHash, verify: verify};
+})();
+document.getElementById("make").addEventListener("click", async function(){
+  var err = document.getElementById("err");
+  var out = document.getElementById("out");
+  err.textContent = ""; out.value = "";
+  var p1 = document.getElementById("pw1").value;
+  var p2 = document.getElementById("pw2").value;
+  if(!p1){ err.textContent = "パスワードを入れてください"; return; }
+  if(p1 !== p2){ err.textContent = "2つのパスワードが一致しません"; return; }
+  out.value = await window.KaimonoPassCore.makeHash(p1);
+});
+document.getElementById("copy").addEventListener("click", function(){
+  var out = document.getElementById("out");
+  out.select();
+  if(navigator.clipboard && out.value){ navigator.clipboard.writeText(out.value); }
+  else { document.execCommand("copy"); }
+});
+</script>
+</body>
+</html>
