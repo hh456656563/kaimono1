@@ -632,7 +632,7 @@ document.getElementById("productSaveBtn").addEventListener("click", function(){
 
 /* ========= リスト内アクション（委譲） ========= */
 document.getElementById("listArea").addEventListener("click", function(e){
-  var t=e.target.closest("[data-buy],[data-addprice],[data-edit],[data-del],[data-delprice],[data-ask]");
+  var t=e.target.closest("[data-buy],[data-addprice],[data-edit],[data-del],[data-delprice],[data-ask],[data-restore]");
   if(!t) return;
   if(t.hasAttribute("data-delprice")){
     var priceId=t.getAttribute("data-delprice");
@@ -648,13 +648,13 @@ document.getElementById("listArea").addEventListener("click", function(e){
     var h=state.history[hIdx];
     var origP=h.productId ? state.products.find(function(x){ return x.id===h.productId; }) : null;
     if(origP){
-      mutate({action:"saveProduct", product:Object.assign({}, origP, {status:"want"})}, function(){
+      mutate({action:"updateProduct", product:Object.assign({}, origP, {status:"want"})}, function(){
         origP.status="want";
         state.history.splice(hIdx, 1);
       }).then(function(){ currentTab="want"; render(); toast("欲しいリストに復元しました"); });
     } else {
-      var np={id:uid("p"), jan:h.jan||"", name:h.name||"", memo:"", photoUrl:h.photoUrl||"", webImageUrl:"", status:"want", createdAt:nowStr()};
-      mutate({action:"saveProduct", product:np}, function(){
+      var np={id:uid(), jan:h.jan||"", name:h.name||"", memo:"", photoUrl:h.photoUrl||"", webImageUrl:"", status:"want", createdAt:todayStr()};
+      mutate({action:"addProduct", product:np}, function(){
         state.products.unshift(np);
         state.history.splice(hIdx, 1);
       }).then(function(){ currentTab="want"; render(); toast("欲しいリストに復元しました"); });
