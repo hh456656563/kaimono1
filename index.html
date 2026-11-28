@@ -12,6 +12,7 @@
 <!-- v5 2026-11-23: パスワード画面（ハッシュ式・手軽な式）追加 / 土台はリポジトリ版v4（写真JAN読み取り強化版） -->
 <!-- v6 2026-11-23: 一括Muse依頼ボタン / 編集画面で価格の編集・削除（updatePrice追加） / 依頼文に商品画像URLの書き戻しを追加 -->
 <!-- v7 2026-11-23: 一括依頼を選択式に（初期チェックは価格なし・未依頼のみ） / カード間隔を詰める / 商品名だけの商品の依頼文を明確化 -->
+<!-- v9 2026-11-28: 欲しい／購入履歴はタグの違いだけ（買うと移るだけ・購入情報は商品に1件だけ上書き、増殖しない） / 購入履歴に削除機能 / 登録店舗名の削除機能 -->
 <!-- v8 2026-11-28: カートロゴ＋iPadホーム画面アイコン / 商品追加時に店舗・価格も登録（店舗名は登録式の選択） / 商品名を一番上・追加した商品は先頭 / 商品URLのみでも登録可 / 画像なしは画像枠にMuseボタン / Museボタン複数選択→一括取得（価格依頼・商品名は改変不可） / 送料欄は価格の右に小さく -->
 <!-- v4 2026-11-21: デザイン刷新（全幅・2列グリッド・見出し1行・タブと検索を1行・ボタン縦狭） / ロックボタン追加 -->
 <!-- v3 2026-11-21: 保存・削除を即時反映（楽観的更新）に変更 / ボタンを小型化 -->
@@ -327,7 +328,7 @@ details.gascode pre{white-space:pre-wrap;word-break:break-all;font-size:11px;bac
     <div id="addPriceWrap">
       <div class="field" style="margin-bottom:6px"><label>最初の価格 <span class="opt">（任意・店舗と価格を入れると一緒に登録されます）</span></label></div>
       <div class="field"><label>店名</label><select id="fStore"></select>
-        <div class="storereg"><input id="fStoreNew" placeholder="新しい店舗名" autocomplete="off"><button class="btn sm" id="fStoreAdd" type="button">店舗を登録</button></div>
+        <div class="storereg"><input id="fStoreNew" placeholder="新しい店舗名" autocomplete="off"><button class="btn sm" id="fStoreAdd" type="button">店舗を登録</button><button class="btn sm danger" id="fStoreDel" type="button">店舗を削除</button></div>
       </div>
       <div class="rowps">
         <div class="field fprice"><label>価格（円）</label><input id="fPrice" type="number" inputmode="numeric" min="0" placeholder="1980"></div>
@@ -359,7 +360,7 @@ details.gascode pre{white-space:pre-wrap;word-break:break-all;font-size:11px;bac
     <button class="iconbtn x" data-close="priceOverlay" type="button" aria-label="閉じる">✕</button>
     <h2>価格を追加</h2>
     <div class="desc" id="priceForName"></div>
-    <div class="field"><label>店名</label><select id="pStore"></select><div class="storereg"><input id="pStoreNew" placeholder="新しい店舗名" autocomplete="off"><button class="btn sm" id="pStoreAdd" type="button">店舗を登録</button></div></div>
+    <div class="field"><label>店名</label><select id="pStore"></select><div class="storereg"><input id="pStoreNew" placeholder="新しい店舗名" autocomplete="off"><button class="btn sm" id="pStoreAdd" type="button">店舗を登録</button><button class="btn sm danger" id="pStoreDel" type="button">店舗を削除</button></div></div>
     <div class="rowps">
       <div class="field fprice"><label>価格（円）</label><input id="pPrice" type="number" inputmode="numeric" min="0" placeholder="1980"></div>
       <div class="field fship"><label>送料（円）</label><input id="pShipping" type="number" inputmode="numeric" min="0" placeholder="0"></div>
@@ -496,7 +497,7 @@ function render(){
   updateBulkBtn();
   var wants = state.products.filter(function(p){ return p.status!=="bought"; });
   document.getElementById("cntWant").textContent = wants.length;
-  document.getElementById("cntHistory").textContent = state.history.length;
+  document.getElementById("cntHistory").textContent = state.products.filter(function(p){ return p.status==="bought"; }).length;
   document.getElementById("tabWant").classList.toggle("on", currentTab==="want");
   document.getElementById("tabHistory").classList.toggle("on", currentTab==="history");
   document.getElementById("toolbarWant").style.display = currentTab==="want" ? "" : "none";
@@ -536,20 +537,27 @@ function renderWant(area, wants){
       '<div class="actions"><button class="btn" data-addprice="'+esc(p.id)+'">価格を追加</button><button class="btn'+(askSel[p.id]?' asksel':'')+'" data-ask="'+esc(p.id)+'">' + (askSel[p.id] ? "✓ 選択中" : (ps.length===0 && reqMap()[p.id] ? "✓ Museに依頼済み" : "🤖 Museに頼む")) + '</button><button class="btn primary" data-buy="'+esc(p.id)+'">✓ 買った</button><button class="btn" data-edit="'+esc(p.id)+'">編集</button><button class="btn danger" data-del="'+esc(p.id)+'">削除</button></div></article>';
   }).join("");
 }
+function legacyHistOf(pid){
+  var rows=state.history.filter(function(h){ return h.productId===pid; })
+    .slice().sort(function(a,b){ return String(b.date||"").localeCompare(String(a.date||"")); });
+  return rows.length?rows[0]:null;
+}
 function renderHistory(area){
-  var list=state.history.slice().sort(function(a,b){ return String(b.date||"").localeCompare(String(a.date||"")); });
+  var list=state.products.filter(function(p){ return p.status==="bought"; }).slice().sort(function(a,b){
+    var da=(a.buyDate||(legacyHistOf(a.id)||{}).date||a.createdAt||"");
+    var db=(b.buyDate||(legacyHistOf(b.id)||{}).date||b.createdAt||"");
+    return String(db).localeCompare(String(da));
+  });
   if(!list.length){
-    area.innerHTML='<div class="empty"><div class="big">🧾</div><b>購入履歴はまだありません</b><br>欲しいリストで「✓ 買った」を押すと、ここに残ります。</div>';
+    area.innerHTML='<div class="empty"><div class="big">🧾</div><b>購入履歴はまだありません</b><br>欲しいリストで「✓ 買った」を押すと、ここに移ります。</div>';
     return;
   }
-  area.innerHTML=list.map(function(h){
-    var vs="";
-    if(h.cheapestTotal!=null && h.cheapestTotal!==""){
-      var diff=Number(h.amount)-Number(h.cheapestTotal);
-      vs='<div class="vs">購入時点の最安：'+esc(h.cheapestStore||"")+' '+yen(h.cheapestTotal)+(diff<=0?' <span class="win">（最安で買えました）</span>':'（差額 +'+yen(diff).replace("¥","¥")+'）')+'</div>';
-    }
-    var hid = h.id || h.productId || (String(h.date||"")+"|"+String(h.name||"")+"|"+String(h.amount||""));
-    return '<div class="hrow">'+thumbHtml(h.photoUrl||"")+'<div class="main"><div class="pname" style="font-size:15px">'+esc(h.name||"（名称なし）")+'</div><div class="meta">'+esc(h.date||"")+' ・ '+esc(h.store||"")+(h.jan?' ・ JAN：'+esc(h.jan):'')+'</div><div class="amt">'+yen(h.amount)+'</div>'+vs+'<div style="margin-top:8px"><button class="btn" type="button" data-restore="'+esc(hid)+'">↩ 復元</button></div></div></div>';
+  area.innerHTML=list.map(function(p){
+    var lg=legacyHistOf(p.id)||{};
+    var date=p.buyDate||lg.date||"";
+    var store=p.buyStore||lg.store||"";
+    var amount=(p.buyAmount!=null&&p.buyAmount!=="")?p.buyAmount:lg.amount;
+    return '<div class="hrow">'+thumbHtml(thumbOf(p))+'<div class="main"><div class="pname" style="font-size:15px">'+esc(p.name||"（名称なし）")+'</div><div class="meta">'+esc(date)+(store?' ・ '+esc(store):'')+(p.jan?' ・ JAN：'+esc(p.jan):'')+'</div>'+((amount!=null&&amount!=="")?'<div class="amt">'+yen(amount)+'</div>':'')+'<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap"><button class="btn" type="button" data-restore="'+esc(p.id)+'">↩ 欲しいに戻す</button><button class="btn danger" type="button" data-hdel="'+esc(p.id)+'">削除</button></div></div></div>';
   }).join("");
 }
 
@@ -682,7 +690,7 @@ document.getElementById("productSaveBtn").addEventListener("click", function(){
 
 /* ========= リスト内アクション（委譲） ========= */
 document.getElementById("listArea").addEventListener("click", function(e){
-  var t=e.target.closest("[data-buy],[data-addprice],[data-edit],[data-del],[data-delprice],[data-ask],[data-restore],[data-askimg]");
+  var t=e.target.closest("[data-buy],[data-addprice],[data-edit],[data-del],[data-delprice],[data-ask],[data-restore],[data-askimg],[data-hdel]");
   if(!t) return;
   if(t.hasAttribute("data-delprice")){
     var priceId=t.getAttribute("data-delprice");
@@ -692,34 +700,22 @@ document.getElementById("listArea").addEventListener("click", function(e){
     return;
   }
   if(t.hasAttribute("data-restore")){
-    var rkey=t.getAttribute("data-restore");
-    var hIdx=state.history.findIndex(function(x){ return (x.id||x.productId||(String(x.date||"")+"|"+String(x.name||"")+"|"+String(x.amount||"")))===rkey; });
-    if(hIdx<0) return;
-    var h=state.history[hIdx];
-    var origP=h.productId ? state.products.find(function(x){ return x.id===h.productId; }) : null;
-    if(origP){
-      mutate({action:"updateProduct", product:Object.assign({}, origP, {status:"want"})}, function(){
-        origP.status="want";
-        state.history.splice(hIdx, 1);
-      }).then(function(){ currentTab="want"; render(); toast("欲しいリストに復元しました"); });
-    } else {
-      var np={id:uid(), jan:h.jan||"", name:h.name||"", url:"", memo:"", photoUrl:h.photoUrl||"", webImageUrl:"", status:"want", createdAt:todayStr()};
-      mutate({action:"addProduct", product:np}, function(){
-        state.products.unshift(np);
-        state.history.splice(hIdx, 1);
-      }).then(function(){ currentTab="want"; render(); toast("欲しいリストに復元しました"); });
-    }
+    var rp=state.products.find(function(x){ return x.id===t.getAttribute("data-restore"); });
+    if(!rp) return;
+    var rUpdated=Object.assign({}, rp, {status:"want"});
+    mutate({action:"updateProduct", product:rUpdated}, function(){ rp.status="want"; })
+      .then(function(){ currentTab="want"; render(); toast("欲しいリストに戻しました"); });
     return;
   }
-  if(t.hasAttribute("data-askimg")){
-    var ip=state.products.find(function(x){ return x.id===t.getAttribute("data-askimg"); });
-    if(ip){
-      markRequested(ip.id);
-      copyText(buildImageAskText(ip)).then(function(){
-        render();
-        toast("画像の依頼文をコピーしました。Museのチャットに貼って送ってください");
-      });
-    }
+  if(t.hasAttribute("data-hdel")){
+    var hp=state.products.find(function(x){ return x.id===t.getAttribute("data-hdel"); });
+    if(!hp) return;
+    if(!armDelete(t, "「"+(hp.name||"この商品")+"」を削除しますか？")) return;
+    var hid2=hp.id;
+    mutate({action:"deleteProduct", productId:hid2}, function(){
+      state.products=state.products.filter(function(x){return x.id!==hid2;});
+      state.prices=state.prices.filter(function(x){return x.productId!==hid2;});
+    }).then(function(){ toast("削除しました"); });
     return;
   }
   var pid=t.getAttribute("data-buy")||t.getAttribute("data-addprice")||t.getAttribute("data-edit")||t.getAttribute("data-del")||t.getAttribute("data-ask");
@@ -804,12 +800,10 @@ document.getElementById("buySaveBtn").addEventListener("click", function(){
   var date=document.getElementById("bDate").value||todayStr();
   if(!store){ toast("買った店を入れてください"); return; }
   if(isNaN(amount)||amount<0){ toast("支払金額を入れてください"); return; }
-  var ch=cheapestOf(p.id);
-  var purchase={ id:uid(), date:date, store:store, amount:amount, cheapestStore: ch?ch.store:"", cheapestTotal: ch?total(ch):"" };
+  var purchase={ date:date, store:store, amount:amount };
   mutate({action:"buyProduct", productId:p.id, purchase:purchase}, function(){
-    p.status="bought";
-    state.history.push({ id:purchase.id, productId:p.id, jan:p.jan||"", name:p.name||"", date:date, store:store, amount:amount, cheapestStore:purchase.cheapestStore, cheapestTotal:purchase.cheapestTotal, photoUrl:thumbOf(p) });
-  }).then(function(){ closeOverlay("buyOverlay"); currentTab="history"; render(); toast("購入履歴に記録しました"); });
+    p.status="bought"; p.buyDate=date; p.buyStore=store; p.buyAmount=amount;
+  }).then(function(){ closeOverlay("buyOverlay"); currentTab="history"; render(); toast("購入履歴に移しました"); });
 });
 
 /* ========= バーコード読み取り（写真のみ・ライブカメラは廃止） ========= */
@@ -1278,6 +1272,29 @@ function registerStore(inputId, selId){
 }
 document.getElementById("fStoreAdd").addEventListener("click", function(){ registerStore("fStoreNew","fStore"); });
 document.getElementById("pStoreAdd").addEventListener("click", function(){ registerStore("pStoreNew","pStore"); });
+function deleteStore(selId){
+  var sel=document.getElementById(selId);
+  var name=sel?sel.value:"";
+  if(!name){ toast("削除する店舗を選んでください"); return false; }
+  var m=storeMaster();
+  if(m.indexOf(name)<0){ toast("その店舗は価格記録にあるだけで、登録店舗ではありません"); return false; }
+  saveStoreMaster(m.filter(function(x){ return x!==name; }));
+  fillAllStoreSelects();
+  toast("店舗「"+name+"」を登録から削除しました");
+  return true;
+}
+document.getElementById("fStoreDel").addEventListener("click", function(){
+  var sel=document.getElementById("fStore");
+  if(!sel.value){ toast("削除する店舗を選んでください"); return; }
+  if(!armDelete(this, "店舗「"+sel.value+"」を登録から削除しますか？")) return;
+  deleteStore("fStore");
+});
+document.getElementById("pStoreDel").addEventListener("click", function(){
+  var sel=document.getElementById("pStore");
+  if(!sel.value){ toast("削除する店舗を選んでください"); return; }
+  if(!armDelete(this, "店舗「"+sel.value+"」を登録から削除しますか？")) return;
+  deleteStore("pStore");
+});
 
 /* ========= 初期化 ========= */
 fillAllStoreSelects();
