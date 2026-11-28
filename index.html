@@ -490,7 +490,7 @@ function renderWant(area, wants){
     var ch=cheapestOf(p.id);
     var ps=pricesOf(p.id).slice().sort(function(a,b){ return total(a)-total(b); });
     var cheapHtml = ch
-      ? '<div class="cheap"><span class="lbl">送料込み最安</span><span class="amt">'+yen(total(ch))+'</span><span class="store">'+esc(ch.store)+'</span><span class="det">本体'+yen(ch.price)+'＋送料'+yen(ch.shipping)+(ch.checkedAt?' ・ '+esc(ch.checkedAt)+'確認':'')+'</span></div>'
+      ? ''
       : '<div class="noprice">価格はまだ未調査です（下の「🤖 Museに頼む」か、価格を手動で追加できます）</div>';
     var priceRows = ps.length ? '<div class="prices"><h4>店ごとの価格（'+ps.length+'件）</h4>'+ ps.map(function(pr,i){
         return '<div class="prow'+(ch&&pr.id===ch.id?" best":"")+'"><span class="st">'+esc(pr.store)+'</span>'+(ch&&pr.id===ch.id?'<span class="badge-best">最安</span>':'')+'<span class="brk">'+yen(pr.price)+'＋送料'+yen(pr.shipping)+'</span><span class="tot">'+yen(total(pr))+'</span>'+(pr.url?'<a href="'+esc(pr.url)+'" target="_blank" rel="noopener">開く</a>':'')+'<button class="del" data-delprice="'+esc(pr.id)+'" aria-label="この価格を削除">✕</button></div>';
@@ -500,7 +500,7 @@ function renderWant(area, wants){
       (p.jan?'<div class="meta">JAN：'+esc(p.jan)+'</div>':'')+
       (p.memo?'<div class="memo">'+esc(p.memo)+'</div>':'')+
       cheapHtml+'</div></div>'+ priceRows +
-      '<div class="actions"><button class="btn primary" data-buy="'+esc(p.id)+'">✓ 買った</button><button class="btn" data-ask="'+esc(p.id)+'">' + (ps.length===0 && reqMap()[p.id] ? "✓ Museに依頼済み" : "🤖 Museに頼む") + '</button><button class="btn" data-addprice="'+esc(p.id)+'">価格を追加</button><button class="btn" data-edit="'+esc(p.id)+'">編集</button><button class="btn danger" data-del="'+esc(p.id)+'">削除</button></div></article>';
+      '<div class="actions"><button class="btn" data-addprice="'+esc(p.id)+'">価格を追加</button><button class="btn" data-ask="'+esc(p.id)+'">' + (ps.length===0 && reqMap()[p.id] ? "✓ Museに依頼済み" : "🤖 Museに頼む") + '</button><button class="btn primary" data-buy="'+esc(p.id)+'">✓ 買った</button><button class="btn" data-edit="'+esc(p.id)+'">編集</button><button class="btn danger" data-del="'+esc(p.id)+'">削除</button></div></article>';
   }).join("");
 }
 function renderHistory(area){
@@ -515,7 +515,8 @@ function renderHistory(area){
       var diff=Number(h.amount)-Number(h.cheapestTotal);
       vs='<div class="vs">購入時点の最安：'+esc(h.cheapestStore||"")+' '+yen(h.cheapestTotal)+(diff<=0?' <span class="win">（最安で買えました）</span>':'（差額 +'+yen(diff).replace("¥","¥")+'）')+'</div>';
     }
-    return '<div class="hrow">'+thumbHtml(h.photoUrl||"")+'<div class="main"><div class="pname" style="font-size:15px">'+esc(h.name||"（名称なし）")+'</div><div class="meta">'+esc(h.date||"")+' ・ '+esc(h.store||"")+(h.jan?' ・ JAN：'+esc(h.jan):'')+'</div><div class="amt">'+yen(h.amount)+'</div>'+vs+'</div></div>';
+    var hid = h.id || h.productId || (String(h.date||"")+"|"+String(h.name||"")+"|"+String(h.amount||""));
+    return '<div class="hrow">'+thumbHtml(h.photoUrl||"")+'<div class="main"><div class="pname" style="font-size:15px">'+esc(h.name||"（名称なし）")+'</div><div class="meta">'+esc(h.date||"")+' ・ '+esc(h.store||"")+(h.jan?' ・ JAN：'+esc(h.jan):'')+'</div><div class="amt">'+yen(h.amount)+'</div>'+vs+'<div style="margin-top:8px"><button class="btn" type="button" data-restore="'+esc(hid)+'">↩ 復元</button></div></div></div>';
   }).join("");
 }
 
@@ -640,6 +641,26 @@ document.getElementById("listArea").addEventListener("click", function(e){
       .then(function(){ toast("価格を削除しました"); });
     return;
   }
+  if(t.hasAttribute("data-restore")){
+    var rkey=t.getAttribute("data-restore");
+    var hIdx=state.history.findIndex(function(x){ return (x.id||x.productId||(String(x.date||"")+"|"+String(x.name||"")+"|"+String(x.amount||"")))===rkey; });
+    if(hIdx<0) return;
+    var h=state.history[hIdx];
+    var origP=h.productId ? state.products.find(function(x){ return x.id===h.productId; }) : null;
+    if(origP){
+      mutate({action:"saveProduct", product:Object.assign({}, origP, {status:"want"})}, function(){
+        origP.status="want";
+        state.history.splice(hIdx, 1);
+      }).then(function(){ currentTab="want"; render(); toast("欲しいリストに復元しました"); });
+    } else {
+      var np={id:uid("p"), jan:h.jan||"", name:h.name||"", memo:"", photoUrl:h.photoUrl||"", webImageUrl:"", status:"want", createdAt:nowStr()};
+      mutate({action:"saveProduct", product:np}, function(){
+        state.products.unshift(np);
+        state.history.splice(hIdx, 1);
+      }).then(function(){ currentTab="want"; render(); toast("欲しいリストに復元しました"); });
+    }
+    return;
+  }
   var pid=t.getAttribute("data-buy")||t.getAttribute("data-addprice")||t.getAttribute("data-edit")||t.getAttribute("data-del")||t.getAttribute("data-ask");
   var p=state.products.find(function(x){ return x.id===pid; });
   if(t.hasAttribute("data-ask") && p){
@@ -673,7 +694,7 @@ document.getElementById("listArea").addEventListener("click", function(e){
     priceTargetId=pid;
     document.getElementById("priceForName").textContent="対象："+(p.name||"（商品名は調査待ち）");
     document.getElementById("pStore").value=""; document.getElementById("pPrice").value="";
-    document.getElementById("pShipping").value="0"; document.getElementById("pUrl").value="";
+    document.getElementById("pShipping").value=""; document.getElementById("pUrl").value="";
     document.getElementById("pDate").value=todayStr();
     openOverlay("priceOverlay");
   }
@@ -1011,7 +1032,7 @@ function renderEditPrices(){
     return '<div class="eprice" style="border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:10px">'
       + '<div class="field"><label>店名</label><input data-epf="store" value="'+esc(pr.store||"")+'" autocomplete="off"></div>'
       + '<div class="row2"><div class="field"><label>価格（円）</label><input data-epf="price" type="number" inputmode="numeric" min="0" value="'+esc(pr.price!=null?pr.price:"")+'"></div>'
-      + '<div class="field"><label>送料（円）</label><input data-epf="shipping" type="number" inputmode="numeric" min="0" value="'+esc(pr.shipping!=null?pr.shipping:0)+'"></div></div>'
+      + '<div class="field"><label>送料（円）</label><input data-epf="shipping" type="number" inputmode="numeric" min="0" value="'+(pr.shipping?esc(pr.shipping):"")+'"></div></div>'
       + '<div class="field"><label>商品ページURL <span class="opt">（任意）</span></label><input data-epf="url" inputmode="url" value="'+esc(pr.url||"")+'" autocomplete="off"></div>'
       + '<div class="field"><label>確認日</label><input data-epf="checkedAt" type="date" value="'+esc(pr.checkedAt||"")+'"></div>'
       + '<div class="scanbtns"><button class="btn primary" type="button" data-epsave="'+esc(pr.id)+'">この価格を保存</button>'
