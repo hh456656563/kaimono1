@@ -12,6 +12,7 @@
 <!-- v5 2026-11-23: パスワード画面（ハッシュ式・手軽な式）追加 / 土台はリポジトリ版v4（写真JAN読み取り強化版） -->
 <!-- v6 2026-11-23: 一括Muse依頼ボタン / 編集画面で価格の編集・削除（updatePrice追加） / 依頼文に商品画像URLの書き戻しを追加 -->
 <!-- v7 2026-11-23: 一括依頼を選択式に（初期チェックは価格なし・未依頼のみ） / カード間隔を詰める / 商品名だけの商品の依頼文を明確化 -->
+<!-- v10 2026-11-28: 画像依頼の無反応を修正（コピー失敗でも必ず反応・失敗時は依頼文を表示） / 編集画面にURLから商品名・店舗名・価格を取得ボタン（単店・巡回なし） / Museに頼む＝巡回専用と明確化 -->
 <!-- v9 2026-11-28: 欲しい／購入履歴はタグの違いだけ（買うと移るだけ・購入情報は商品に1件だけ上書き、増殖しない） / 購入履歴に削除機能 / 登録店舗名の削除機能 -->
 <!-- v8 2026-11-28: カートロゴ＋iPadホーム画面アイコン / 商品追加時に店舗・価格も登録（店舗名は登録式の選択） / 商品名を一番上・追加した商品は先頭 / 商品URLのみでも登録可 / 画像なしは画像枠にMuseボタン / Museボタン複数選択→一括取得（価格依頼・商品名は改変不可） / 送料欄は価格の右に小さく -->
 <!-- v4 2026-11-21: デザイン刷新（全幅・2列グリッド・見出し1行・タブと検索を1行・ボタン縦狭） / ロックボタン追加 -->
@@ -308,6 +309,10 @@ details.gascode pre{white-space:pre-wrap;word-break:break-all;font-size:11px;bac
       <label>商品URL <span class="opt">（任意・URLだけでも登録できます）</span></label>
       <input id="fUrl" inputmode="url" placeholder="https://…" autocomplete="off">
     </div>
+    <div class="field" id="urlFetchWrap" style="display:none">
+      <button class="btn block" id="urlFetchBtn" type="button">🔗 URLから商品名・店舗名・価格を取得（Museに依頼）</button>
+      <div class="meta" style="margin-top:5px">このURLの店舗だけから取ります（複数店舗の巡回はしません）。依頼文をコピーしてClaudeのチャットに貼ってください。</div>
+    </div>
     <div class="field">
       <label>メモ <span class="opt">（任意）</span></label>
       <textarea id="fMemo" placeholder="例：近所のドラッグストアで見た。来月までに欲しい"></textarea>
@@ -404,6 +409,16 @@ details.gascode pre{white-space:pre-wrap;word-break:break-all;font-size:11px;bac
       <button class="btn sm" id="gasCopyBtn" type="button">コードをコピー</button>
       <pre id="gasCodePre"></pre>
     </details>
+  </div>
+</div>
+
+<!-- 依頼文の表示（コピー失敗時） -->
+<div class="overlay" id="askTextOverlay">
+  <div class="sheet">
+    <button class="iconbtn x" data-close="askTextOverlay" type="button" aria-label="閉じる">✕</button>
+    <h2>依頼文</h2>
+    <div class="desc">コピーできなかったので全文を表示します。長押しでコピーして、Claudeのチャットに貼ってください。</div>
+    <textarea id="askTextArea" readonly style="min-height:180px;width:100%"></textarea>
   </div>
 </div>
 
@@ -621,6 +636,7 @@ function resetProductForm(){
   document.getElementById("fJan").value=""; document.getElementById("fName").value="";
   document.getElementById("fMemo").value=""; document.getElementById("fWebImage").value="";
   document.getElementById("fUrl").value="";
+  document.getElementById("urlFetchWrap").style.display="none";
   document.getElementById("addPriceWrap").style.display="";
   document.getElementById("fPrice").value=""; document.getElementById("fShipping").value="";
   var fsn=document.getElementById("fStoreNew"); if(fsn) fsn.value="";
@@ -718,6 +734,21 @@ document.getElementById("listArea").addEventListener("click", function(e){
     }).then(function(){ toast("削除しました"); });
     return;
   }
+  if(t.hasAttribute("data-askimg")){
+    var ip=state.products.find(function(x){ return x.id===t.getAttribute("data-askimg"); });
+    if(ip){
+      markRequested(ip.id);
+      var imgText=buildImageAskText(ip);
+      copyText(imgText).then(function(){
+        render();
+        toast("画像の依頼文をコピーしました。Museのチャットに貼って送ってください");
+      }).catch(function(){
+        render();
+        showAskText(imgText);
+      });
+    }
+    return;
+  }
   var pid=t.getAttribute("data-buy")||t.getAttribute("data-addprice")||t.getAttribute("data-edit")||t.getAttribute("data-del")||t.getAttribute("data-ask");
   var p=state.products.find(function(x){ return x.id===pid; });
   if(t.hasAttribute("data-ask") && p){
@@ -733,6 +764,7 @@ document.getElementById("listArea").addEventListener("click", function(e){
     document.getElementById("fJan").value=p.jan||""; document.getElementById("fName").value=p.name||"";
     document.getElementById("fMemo").value=p.memo||""; document.getElementById("fWebImage").value=p.webImageUrl||"";
     document.getElementById("fUrl").value=p.url||"";
+    document.getElementById("urlFetchWrap").style.display="";
     document.getElementById("addPriceWrap").style.display="none";
     pendingPhotoKeep=p.photoUrl||"";
     renderEditPrices();
@@ -999,13 +1031,25 @@ function buildAskText(p){
   return lines.join("\n");
 }
 function copyText(text){
-  if(navigator.clipboard && navigator.clipboard.writeText) return navigator.clipboard.writeText(text);
-  return new Promise(function(resolve){
-    var ta=document.createElement("textarea"); ta.value=text; ta.style.position="fixed"; ta.style.opacity="0";
-    document.body.appendChild(ta); ta.select();
-    try{ document.execCommand("copy"); }catch(e){}
-    document.body.removeChild(ta); resolve();
-  });
+  function fallback(){
+    return new Promise(function(resolve, reject){
+      try{
+        var ta=document.createElement("textarea"); ta.value=text; ta.style.position="fixed"; ta.style.opacity="0";
+        document.body.appendChild(ta); ta.select(); ta.setSelectionRange(0, ta.value.length);
+        var ok=document.execCommand("copy");
+        document.body.removeChild(ta);
+        if(ok) resolve(); else reject(new Error("copy failed"));
+      }catch(e){ reject(e); }
+    });
+  }
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    return navigator.clipboard.writeText(text).catch(function(){ return fallback(); });
+  }
+  return fallback();
+}
+function showAskText(text){
+  document.getElementById("askTextArea").value=text;
+  openOverlay("askTextOverlay");
 }
 
 function buildImageAskText(p){
@@ -1020,7 +1064,7 @@ function buildImageAskText(p){
 }
 function buildBulkAskText(list){
   var lines=[];
-  lines.push("調べてください（欲しい商品・最安値メモ）／一括 " + list.length + " 件");
+  lines.push("調べてください（欲しい商品・最安値メモ）／巡回（一括 " + list.length + " 件）");
   list.forEach(function(p,i){
     lines.push("");
     if(p.jan){
@@ -1034,7 +1078,7 @@ function buildBulkAskText(list){
     if(p.memo) lines.push("   メモ：" + p.memo);
   });
   lines.push("");
-  lines.push("やってほしいこと：各商品について、複数店舗（ヨドバシ／ビックカメラ／楽天／Amazon／Yahoo!ショッピング）の価格・送料を調べ、シートに書き戻してください。商品名が既に入っている商品は、商品名を変更しないでください（価格だけ書き戻してください）。商品名が空の商品だけ、特定した商品名を書き戻してください。商品URLがある商品は、そのページを優先して確認してください。価格を探すときは、商品名から販売文句（送料無料・公式・まとめ買い等）を除き、メーカー名・型番・規格（容量／個数／色）で検索してください。");
+  lines.push("やってほしいこと（巡回）：各商品について、複数店舗（ヨドバシ／ビックカメラ／楽天／Amazon／Yahoo!ショッピング）の価格・送料を調べ、シートに書き戻してください。商品名が既に入っている商品は、商品名を変更しないでください（価格だけ書き戻してください）。商品名が空の商品だけ、特定した商品名を書き戻してください。商品URLがある商品は、そのページを優先して確認してください。価格を探すときは、商品名から販売文句（送料無料・公式・まとめ買い等）を除き、メーカー名・型番・規格（容量／個数／色）で検索してください。");
   return lines.join("\n");
 }
 function bulkCandidates(){
@@ -1086,7 +1130,10 @@ document.getElementById("bulkAskBtn").addEventListener("click", function(){
   askSel={};
   copyText(text).then(function(){
     render();
-    toast(targets.length + "件分の価格依頼文をコピーしました。Museのチャットに貼って送ってください");
+    toast(targets.length + "件分の巡回依頼文をコピーしました。Museのチャットに貼って送ってください");
+  }).catch(function(){
+    render();
+    showAskText(text);
   });
 });
 document.getElementById("bulkList").addEventListener("change", updateBulkCopyBtn);
@@ -1101,6 +1148,8 @@ document.getElementById("bulkCopyBtn").addEventListener("click", function(){
     closeOverlay("bulkOverlay");
     render();
     toast(targets.length + "件分の依頼文をコピーしました。Museのチャットに貼って送ってください");
+  }).catch(function(){
+    showAskText(text);
   });
 });
 
@@ -1232,6 +1281,34 @@ document.getElementById("gasCopyBtn").addEventListener("click", function(){
     try{ document.execCommand("copy"); done(); }catch(e){ toast("コピーできませんでした。コードを選択してコピーしてください"); }
     document.body.removeChild(ta);
   }
+});
+
+/* ========= URLから取得（単店・巡回なし） ========= */
+function buildUrlFetchText(p){
+  var lines=[];
+  lines.push("商品ページから調べてください（欲しい商品・最安値メモ／URLから取得）");
+  lines.push("商品URL：" + (p.url || ""));
+  lines.push("JAN：" + (p.jan || "なし"));
+  lines.push("商品名：" + (p.name || "（未登録）"));
+  if(p.memo) lines.push("メモ：" + p.memo);
+  lines.push("やってほしいこと：このURLの店舗で、この商品の商品名・店舗名・価格・送料を調べ、シートに書き戻してください（価格は価格記録として追加し、商品ページURLにはこのURLを入れてください）。複数店舗の巡回はしないでください。商品名が既に入っている場合は、商品名を変更しないでください（空の場合だけ書き戻してください）。あわせて商品画像のURLも分かったら、商品の商品画像URL（webImageUrl）に書き戻してください。");
+  return lines.join("\n");
+}
+document.getElementById("urlFetchBtn").addEventListener("click", function(){
+  var url=document.getElementById("fUrl").value.trim();
+  if(!url){ toast("先に商品URLを入れてください"); return; }
+  var p=state.products.find(function(x){ return x.id===editingProductId; }) || {};
+  var text=buildUrlFetchText({
+    url:url,
+    jan:document.getElementById("fJan").value.trim() || p.jan || "",
+    name:document.getElementById("fName").value.trim() || p.name || "",
+    memo:document.getElementById("fMemo").value.trim() || p.memo || ""
+  });
+  copyText(text).then(function(){
+    toast("URLから取得の依頼文をコピーしました。Museのチャットに貼って送ってください");
+  }).catch(function(){
+    showAskText(text);
+  });
 });
 
 /* ========= 店舗マスタ（選択式） ========= */
